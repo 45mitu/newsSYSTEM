@@ -9,8 +9,8 @@ from src.fetcher import fetch_all_feeds, SourceConfig as FetcherSourceConfig
 from src.storage import ArticleStore
 from src.filter import filter_articles
 from src.summarizer import build_provider, summarize_articles, generate_trend_summary
-from src.formatter import format_digest
-from src.notifier import write_digest_file, send_slack_notification, send_discord_notification
+from src.formatter import format_digest, format_digest_html
+from src.notifier import write_digest_file, write_html_files, push_github_pages, send_slack_notification, send_discord_notification
 from src.models import DigestResult
 
 logging.basicConfig(
@@ -77,6 +77,17 @@ def main(
         content = format_digest(digest)
         path = write_digest_file(content, config.notification.output_dir, digest.date, dry_run=dry_run)
         logger.info("Digest written to: %s", path)
+
+        index_html, manifest, sw_js, icon_svg = format_digest_html(digest)
+        write_html_files(index_html, manifest, sw_js, icon_svg, config.notification.output_dir)
+
+        if config.github_pages.enabled:
+            push_github_pages(
+                config.notification.output_dir,
+                remote=config.github_pages.remote,
+                branch=config.github_pages.branch,
+                dry_run=dry_run,
+            )
 
         total = len(ai_processed) + len(pc_processed)
         if config.notification.slack_enabled and config.notification.slack_webhook_url:

@@ -33,6 +33,12 @@ class NotificationConfig:
     discord_webhook_url: str | None  # DISCORD_WEBHOOK_URL from env
 
 @dataclass
+class GitHubPagesConfig:
+    enabled: bool
+    remote: str   # git remote name (e.g. "origin")
+    branch: str   # e.g. "gh-pages"
+
+@dataclass
 class AppConfig:
     sources: list[SourceConfig]
     keywords_ai: list[str]
@@ -41,6 +47,7 @@ class AppConfig:
     retention_days: int
     llm: LLMConfig
     notification: NotificationConfig
+    github_pages: GitHubPagesConfig
     fetch_timeout: int
     fetch_user_agent: str
     dry_run: bool = False
@@ -74,6 +81,7 @@ def load_config(
     notif_data = data.get("notification", {})
     fetch_data = data.get("fetch", {})
     db_data = data.get("database", {})
+    gh_data = data.get("github_pages", {})
 
     return AppConfig(
         sources=sources,
@@ -95,6 +103,11 @@ def load_config(
             discord_enabled=bool(notif_data.get("discord_enabled", False)),
             slack_webhook_url=os.getenv("SLACK_WEBHOOK_URL"),
             discord_webhook_url=os.getenv("DISCORD_WEBHOOK_URL"),
+        ),
+        github_pages=GitHubPagesConfig(
+            enabled=bool(gh_data.get("enabled", False)),
+            remote=gh_data.get("remote", "origin"),
+            branch=gh_data.get("branch", "gh-pages"),
         ),
         fetch_timeout=int(fetch_data.get("timeout_seconds", 30)),
         fetch_user_agent=fetch_data.get("user_agent", "NewsBot/1.0"),

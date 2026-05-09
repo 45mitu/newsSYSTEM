@@ -68,6 +68,11 @@ notification:
   slack_enabled: true
   discord_enabled: true
 
+github_pages:
+  enabled: false                   # trueにするとgh-pagesブランチへ自動push
+  remote: "origin"                 # git remote名
+  branch: "gh-pages"              # デプロイ先ブランチ
+
 fetch:
   timeout_seconds: 30
   user_agent: "NewsBot/1.0"
