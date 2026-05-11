@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import re
+import time
 from typing import TYPE_CHECKING, Protocol
 
 from src.models import RawArticle, ProcessedArticle
@@ -29,6 +31,27 @@ class GeminiProvider:
         self._client = genai.Client(api_key=api_key)
         self._model_name = model
 
+    def _call_with_retry(self, prompt: str, max_chars: int, fallback: str) -> str:
+        for attempt in range(3):
+            try:
+                response = self._client.models.generate_content(
+                    model=self._model_name, contents=prompt
+                )
+                time.sleep(4)  # 15 RPM制限対策（60/15=4秒）
+                return response.text.strip()[:max_chars]
+            except Exception as e:
+                err = str(e)
+                if "429" in err or "RESOURCE_EXHAUSTED" in err:
+                    m = re.search(r"retry in (\d+(?:\.\d+)?)s", err)
+                    wait = float(m.group(1)) + 2 if m else 65.0
+                    logger.info("Gemini rate limited, waiting %.0fs (attempt %d/3)...", wait, attempt + 1)
+                    time.sleep(wait)
+                else:
+                    logger.warning("Gemini error: %s", e)
+                    return fallback
+        logger.warning("Gemini max retries exceeded")
+        return fallback
+
     def summarize_article(self, title: str, raw_summary: str) -> str:
         prompt = (
             "あなたはIT/AIニュースの要約専門家です。\n"
@@ -37,14 +60,7 @@ class GeminiProvider:
             f"内容: {raw_summary[:1000]}\n"
             "必ず100〜150文字以内で簡潔にまとめてください。"
         )
-        try:
-            response = self._client.models.generate_content(
-                model=self._model_name, contents=prompt
-            )
-            return response.text.strip()[:200]
-        except Exception as e:
-            logger.warning("Gemini summarize error: %s", e)
-            return raw_summary[:150]
+        return self._call_with_retry(prompt, 200, raw_summary[:150])
 
     def generate_trend(self, ai_titles: list[str], pc_titles: list[str]) -> str:
         all_titles = "\n".join(f"- {t}" for t in ai_titles + pc_titles)
@@ -53,14 +69,7 @@ class GeminiProvider:
             "本日のニュース一覧から全体のトレンドを200文字以内の日本語でまとめてください。\n"
             f"{all_titles}"
         )
-        try:
-            response = self._client.models.generate_content(
-                model=self._model_name, contents=prompt
-            )
-            return response.text.strip()[:250]
-        except Exception as e:
-            logger.warning("Gemini trend error: %s", e)
-            return "本日のトレンドを取得できませんでした。"
+        return self._call_with_retry(prompt, 250, "本日のトレンドを取得できませんでした。")
 
 
 class OllamaProvider:

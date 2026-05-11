@@ -77,7 +77,7 @@ def push_github_pages(
     branch: str = "gh-pages",
     dry_run: bool = False,
 ) -> bool:
-    """output/のHTML/JSON/JS/SVGをgh-pagesブランチにpushする。"""
+    """output/のHTML/JSON/JS/SVGをgh-pagesブランチにforce pushする。"""
     if dry_run:
         logger.info("DRY RUN: would push to %s/%s", remote, branch)
         return True
@@ -90,82 +90,50 @@ def push_github_pages(
         logger.warning("No web files found in %s", output_dir)
         return False
 
+    # リモートURLを取得
     try:
         r = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
+            ["git", "remote", "get-url", remote],
             capture_output=True, text=True, check=True,
         )
-        git_root = Path(r.stdout.strip())
+        remote_url = r.stdout.strip()
     except subprocess.CalledProcessError as e:
-        logger.error("Not a git repo: %s", e)
+        logger.error("Failed to get remote URL for '%s': %s", remote, e)
         return False
 
-    worktree_path = git_root / ".gh-pages-wt"
-    try:
-        # Fetch remote branch (ignore error if branch doesn't exist yet)
-        subprocess.run(
-            ["git", "fetch", remote, f"{branch}:{branch}"],
-            capture_output=True, cwd=git_root,
-        )
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        try:
+            # 一時gitリポジトリを初期化
+            subprocess.run(["git", "init"], cwd=tmp_dir, check=True, capture_output=True)
+            subprocess.run(["git", "checkout", "-b", branch], cwd=tmp_dir, check=True, capture_output=True)
+            subprocess.run(["git", "config", "user.email", "newsbot@local"], cwd=tmp_dir, capture_output=True)
+            subprocess.run(["git", "config", "user.name", "NewsBot"], cwd=tmp_dir, capture_output=True)
 
-        # Create orphan branch if it doesn't exist
-        br_check = subprocess.run(
-            ["git", "rev-parse", "--verify", branch],
-            capture_output=True, cwd=git_root,
-        )
-        if br_check.returncode != 0:
-            subprocess.run(
-                ["git", "checkout", "--orphan", branch],
-                capture_output=True, cwd=git_root, check=True,
-            )
-            subprocess.run(
-                ["git", "rm", "-rf", "."],
-                capture_output=True, cwd=git_root,
-            )
-            subprocess.run(
-                ["git", "checkout", "master"],
-                capture_output=True, cwd=git_root,
-            )
+            # Webファイルをコピー
+            for f in web_files:
+                shutil.copy2(f, Path(tmp_dir) / f.name)
 
-        # Add worktree
-        subprocess.run(
-            ["git", "worktree", "add", "--force", str(worktree_path), branch],
-            capture_output=True, text=True, cwd=git_root, check=True,
-        )
-
-        # Copy web files
-        for f in web_files:
-            shutil.copy2(f, worktree_path / f.name)
-
-        # Commit
-        subprocess.run(["git", "add", "-A"], cwd=worktree_path, check=True)
-        diff = subprocess.run(
-            ["git", "diff", "--cached", "--quiet"], cwd=worktree_path
-        )
-        if diff.returncode != 0:
+            # コミット＆force push
+            subprocess.run(["git", "add", "-A"], cwd=tmp_dir, check=True, capture_output=True)
             date_str = datetime.now().strftime("%Y-%m-%d")
             subprocess.run(
                 ["git", "commit", "-m", f"Update digest {date_str}"],
-                cwd=worktree_path, check=True,
+                cwd=tmp_dir, check=True, capture_output=True,
             )
-            subprocess.run(
-                ["git", "push", remote, branch],
-                cwd=worktree_path, check=True,
+            result = subprocess.run(
+                ["git", "push", "--force", remote_url, f"HEAD:{branch}"],
+                cwd=tmp_dir, capture_output=True, text=True,
             )
-            logger.info("Pushed to GitHub Pages (%s/%s)", remote, branch)
-        else:
-            logger.info("GitHub Pages: no changes to push")
+            if result.returncode == 0:
+                logger.info("Pushed to GitHub Pages (%s/%s)", remote, branch)
+                return True
+            else:
+                logger.error("Push failed: %s", result.stderr)
+                return False
 
-        return True
-
-    except Exception as e:
-        logger.error("GitHub Pages push failed: %s", e)
-        return False
-    finally:
-        subprocess.run(
-            ["git", "worktree", "remove", "--force", str(worktree_path)],
-            capture_output=True, cwd=git_root,
-        )
+        except Exception as e:
+            logger.error("GitHub Pages push failed: %s", e)
+            return False
 
 
 def send_discord_notification(

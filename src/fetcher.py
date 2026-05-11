@@ -84,7 +84,7 @@ def _parse_published(entry: dict) -> datetime:
 def fetch_feed(source: SourceConfig, timeout: int = 30) -> list[RawArticle]:
     """1つのRSSフィードを取得。エラーは空リスト返却でsilentに処理。"""
     try:
-        response = httpx.get(source.url, headers=_HEADERS, timeout=timeout)
+        response = httpx.get(source.url, headers=_HEADERS, timeout=timeout, follow_redirects=True)
         response.raise_for_status()
         feed = feedparser.parse(response.content)
     except Exception as exc:
