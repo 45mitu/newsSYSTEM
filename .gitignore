@@ -9,6 +9,7 @@ venv/
 dist/
 build/
 .pytest_cache/
+logs/
 output/digest_*.md
 output/index.html
 output/sw.js

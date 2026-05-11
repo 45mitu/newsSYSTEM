@@ -18,22 +18,26 @@ _HTML_TEMPLATE = """\
     :root{{--bg:#0f0f1a;--card:#1a1a2e;--text:#e0e0f0;--muted:#8888bb;--ai:#6c63ff;--pc:#00b4d8;--trend:#f72585;--border:#2a2a45;--link:#90e0ef}}
     @media(prefers-color-scheme:light){{:root{{--bg:#f4f4ff;--card:#fff;--text:#1a1a35;--muted:#5555aa;--border:#dde;--link:#005f8f}}}}
     *{{box-sizing:border-box;margin:0;padding:0}}
-    body{{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans JP",sans-serif;background:var(--bg);color:var(--text);max-width:720px;margin:0 auto;padding:16px 16px 80px}}
+    body{{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans JP",sans-serif;background:var(--bg);color:var(--text);max-width:1100px;margin:0 auto;padding:16px 16px 80px}}
     header{{padding:20px 0 14px;border-bottom:1px solid var(--border);margin-bottom:24px}}
     .title{{font-size:1.4rem;font-weight:700;display:flex;align-items:center;gap:8px}}
     .date-badge{{background:var(--ai);color:#fff;font-size:.75rem;font-weight:600;padding:2px 10px;border-radius:20px}}
     .meta{{font-size:.75rem;color:var(--muted);margin-top:6px}}
     .dry-run{{background:#4a2e00;color:#ffcc00;border-radius:8px;padding:8px 14px;margin-bottom:16px;font-size:.82rem}}
-    section{{margin-bottom:28px}}
+    .news-grid{{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;margin-bottom:28px}}
+    @media(max-width:640px){{.news-grid{{grid-template-columns:1fr}}}}
+    section{{margin-bottom:0}}
     .sec-head{{display:flex;align-items:center;gap:8px;margin-bottom:14px}}
     .sec-head h2{{font-size:1rem;font-weight:700}}
     .dot{{width:10px;height:10px;border-radius:50%;flex-shrink:0}}
     .dot-ai{{background:var(--ai)}}.dot-pc{{background:var(--pc)}}.dot-trend{{background:var(--trend)}}
     .card{{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:10px}}
-    .card h3{{font-size:.92rem;font-weight:600;line-height:1.45;margin-bottom:8px}}
+    .card h3{{font-size:.92rem;font-weight:600;line-height:1.45;margin-bottom:4px}}
+    .title-orig{{font-size:.72rem;color:var(--muted);font-style:italic;margin-bottom:8px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
     .summary{{font-size:.83rem;color:var(--muted);line-height:1.65;margin-bottom:10px}}
     .art-meta{{font-size:.73rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:8px;align-items:center}}
     .art-meta a{{color:var(--link);text-decoration:none;padding:2px 8px;border:1px solid var(--link);border-radius:20px;white-space:nowrap}}
+    .trend-section{{margin-bottom:28px}}
     .trend-card{{background:var(--card);border:1px solid var(--trend);border-radius:12px;padding:14px}}
     .trend-card p{{font-size:.9rem;line-height:1.75}}
     footer{{margin-top:24px;padding-top:16px;border-top:1px solid var(--border);font-size:.72rem;color:var(--muted);text-align:center}}
@@ -47,12 +51,14 @@ _HTML_TEMPLATE = """\
   <div class="meta">生成: {generated_at}</div>
 </header>
 <main>
+<div class="news-grid">
 {ai_section}
 {pc_section}
-<section>
+</div>
+<div class="trend-section">
   <div class="sec-head"><span class="dot dot-trend"></span><h2>本日のトレンドまとめ</h2></div>
   <div class="trend-card"><p>{trend_summary}</p></div>
-</section>
+</div>
 </main>
 <footer>このダイジェストは自動生成されました。</footer>
 <button id="install">ホーム画面に追加</button>
@@ -116,6 +122,18 @@ def format_digest_html(digest: DigestResult) -> tuple[str, str, str, str]:
     return index_html, _MANIFEST, sw_js, _ICON_SVG
 
 
+def _parse_summary(ai_summary: str, original_title: str) -> tuple[str, str, bool]:
+    """(title_ja, summary_text, translated) を返す。
+    Geminiが「日本語タイトル\\n\\n要約」形式で返した場合にタイトルを分離する。"""
+    if "\n\n" in ai_summary:
+        parts = ai_summary.split("\n\n", 1)
+        title_ja = parts[0].strip()
+        summary = parts[1].strip()
+        translated = title_ja != original_title
+        return title_ja, summary, translated
+    return original_title, ai_summary, False
+
+
 def _section_html(articles: list[ProcessedArticle], heading: str, kind: str) -> str:
     if not articles:
         body = '<div class="card"><p style="color:var(--muted);font-size:.85rem">本日は該当記事がありませんでした。</p></div>'
@@ -124,10 +142,16 @@ def _section_html(articles: list[ProcessedArticle], heading: str, kind: str) -> 
         for a in articles:
             pub = (a.published_at.astimezone(JST).strftime("%m/%d %H:%M")
                    if a.published_at.tzinfo else a.published_at.strftime("%m/%d %H:%M"))
+            title_ja, summary_text, translated = _parse_summary(a.ai_summary, a.title)
+            orig_line = (
+                f'<span class="title-orig">{html.escape(a.title)}</span>'
+                if translated else ""
+            )
             cards.append(
                 f'<div class="card">'
-                f'<h3>{html.escape(a.title)}</h3>'
-                f'<p class="summary">{html.escape(a.ai_summary)}</p>'
+                f'<h3>{html.escape(title_ja)}</h3>'
+                f'{orig_line}'
+                f'<p class="summary">{html.escape(summary_text)}</p>'
                 f'<div class="art-meta">'
                 f'<span>{html.escape(a.source_name)}</span>'
                 f'<span>{pub} JST</span>'

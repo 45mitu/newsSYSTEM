@@ -54,13 +54,15 @@ class GeminiProvider:
 
     def summarize_article(self, title: str, raw_summary: str) -> str:
         prompt = (
-            "あなたはIT/AIニュースの要約専門家です。\n"
-            f"以下の記事を100〜150文字の日本語で要約してください。\n"
+            "あなたはIT/AIニュースの専門家です。以下の記事を処理してください。\n\n"
+            "【出力形式】必ずこの2ブロック構成で出力してください:\n"
+            "1行目: タイトルの自然な日本語訳（すでに日本語ならそのまま）\n"
+            "（空行）\n"
+            "100〜150文字の日本語要約\n\n"
             f"タイトル: {title}\n"
-            f"内容: {raw_summary[:1000]}\n"
-            "必ず100〜150文字以内で簡潔にまとめてください。"
+            f"内容: {raw_summary[:1000]}"
         )
-        return self._call_with_retry(prompt, 200, raw_summary[:150])
+        return self._call_with_retry(prompt, 400, raw_summary[:150])
 
     def generate_trend(self, ai_titles: list[str], pc_titles: list[str]) -> str:
         all_titles = "\n".join(f"- {t}" for t in ai_titles + pc_titles)
