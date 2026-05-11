@@ -9,3 +9,8 @@ venv/
 dist/
 build/
 .pytest_cache/
+output/digest_*.md
+output/index.html
+output/sw.js
+output/manifest.json
+output/icon.svg
